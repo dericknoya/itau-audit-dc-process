@@ -8,7 +8,7 @@ from cryptography.hazmat.backends import default_backend
 import time
 from dotenv import load_dotenv
 
-# --- 1. Configuração e Autenticação ---
+# --- 1. Configuração e Autenticação (Sem alterações) ---
 
 load_dotenv()
 SF_LOGIN_URL = os.getenv("SF_LOGIN_URL", "https://login.salesforce.com")
@@ -42,9 +42,8 @@ def authenticate_jwt(login_url, client_id, username, private_key_file):
     print("🚫  A análise não pode continuar devido à falha na autenticação.")
     return False
 
-# --- 2. Carregamento e Preparação dos Dados ---
+# --- 2. Carregamento e Preparação dos Dados (Sem alterações) ---
 
-# <--- MELHORIA: Função de carregamento robusta, inspirada no auditCampos.py --->
 def load_data_from_csv(files_to_load):
     print("\n📂 Carregando arquivos CSV do diretório 'dataExtract' para análise...")
     dataframes = {}
@@ -73,11 +72,8 @@ def load_data_from_csv(files_to_load):
     print("✅  Carregamento de arquivos concluído!\n")
     return dataframes
 
-# <--- NOVO: Função para normalizar colunas para minúsculas --->
 def normalize_dataframes(dfs):
-    """Converte colunas de texto chave para minúsculas para garantir consistência."""
     print("   - LOG: Normalizando dados para análise (convertendo para minúsculas)...")
-    
     columns_to_normalize = {
         'segments': ['Id', 'IncludeCriteria', 'ExcludeCriteria'],
         'activations': ['marketSegmentId', 'activationTargetSubjectConfig.developerName', 'attributesConfig.attributes.entityName', 'contactPointsConfig.contactPoints.contactPointEntityName'],
@@ -86,7 +82,6 @@ def normalize_dataframes(dfs):
         'mappings': ['sourceEntityDeveloperName'],
         'streams': ['dataLakeObjectInfo.name']
     }
-
     for df_key, columns in columns_to_normalize.items():
         if df_key in dfs and not dfs[df_key].empty:
             for col in columns:
@@ -94,41 +89,55 @@ def normalize_dataframes(dfs):
                     dfs[df_key][col] = dfs[df_key][col].astype(str).str.lower()
     return dfs
 
+# --- 3. Lógica de Análise (Com Otimizações) ---
 
-# --- 3. Lógica de Análise ---
-
+# <--- OTIMIZAÇÃO: Lógica de análise de segmentos reescrita para ser mais performática --->
 def analyze_segments(segments_df, activations_df, user_map):
     if segments_df.empty: return []
     print("Analisando Segmentos...")
     results = []
+    
     segments_with_activations = set(activations_df['marketSegmentId'].unique()) if not activations_df.empty else set()
-    all_criteria = segments_df['IncludeCriteria'].astype(str) + segments_df['ExcludeCriteria'].astype(str)
+    
+    # Combina os critérios para busca
+    all_criteria = segments_df['IncludeCriteria'].fillna('') + segments_df['ExcludeCriteria'].fillna('')
+    
+    # Função auxiliar para verificar se o ID do segmento é usado como filtro em OUTROS segmentos
+    def is_used_as_filter(segment_id, current_index):
+        # Seleciona todos os critérios, exceto o da linha atual
+        other_criteria = all_criteria.drop(current_index)
+        # .str.contains é uma operação vetorizada e muito mais rápida
+        return other_criteria.str.contains(segment_id, na=False).any()
+
     segments_df['LastPublishedEndDateTime_dt'] = pd.to_datetime(segments_df['LastPublishedEndDateTime'], errors='coerce')
-    for _, row in segments_df.iterrows():
+    
+    for index, row in segments_df.iterrows():
         status, reason = None, None
         is_older_than_30_days = pd.isna(row['LastPublishedEndDateTime_dt']) or (TODAY - row['LastPublishedEndDateTime_dt']) > timedelta(days=30)
         if not is_older_than_30_days: continue
 
-        # <--- ALTERADO: Lógica de verificação usa o ID normalizado --->
         segment_id_lower = row['Id'] 
-        is_used_as_filter = any(segment_id_lower in criteria for criteria in all_criteria if segment_id_lower not in criteria)
+        
+        # A verificação de filtro agora é mais eficiente
+        used_as_filter = is_used_as_filter(segment_id_lower, index)
         has_activation = segment_id_lower in segments_with_activations
         
-        if not is_used_as_filter:
+        if not used_as_filter:
             if has_activation:
                 status, reason = "INATIVO", "Última publicação > 30 dias e não usado como filtro, mas possui ativação relacionada."
             else:
                 status, reason = "ORFAO", "Última publicação > 30 dias, não usado como filtro e não possui ativação relacionada."
-        elif is_used_as_filter and is_older_than_30_days:
+        elif used_as_filter and is_older_than_30_days:
              status, reason = "INATIVO", "Última publicação > 30 dias, mas é usado como filtro em outro segmento."
+        
         if status:
             results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['Id'], "OBJECT_TYPE": "SEGMENT", "DELETION_IDENTIFIER": row['Id'], "DISPLAY_NAME": row['Name'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": user_map.get(row['CreatedById'], row['CreatedById'])})
     return results
 
+
 def analyze_activations(activations_df, segments_to_delete_ids):
     if activations_df.empty or not segments_to_delete_ids: return []
     print("Analisando Ativações...")
-    # <--- ALTERADO: A verificação agora é case-insensitive devido à normalização prévia --->
     relevant_activations = activations_df[activations_df['marketSegmentId'].isin(segments_to_delete_ids)].copy()
     if relevant_activations.empty: return []
     
@@ -139,12 +148,11 @@ def analyze_activations(activations_df, segments_to_delete_ids):
         results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "ACTIVATION", "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": "ORFAO", "Reason": reason_text, "CREATED_BY_NAME": "N/A"})
     return results
 
-# <--- MELHORIA: Função agora recebe dmo_details_df e user_map para enriquecimento dos dados --->
-def analyze_dmos(dmos_df, dmo_details_df, segments_df, activations_df, ci_expression_df, user_map):
+# <--- OTIMIZAÇÃO: A função agora recebe 'all_segment_criteria_text' pré-calculado --->
+def analyze_dmos(dmos_df, dmo_details_df, activations_df, ci_expression_df, user_map, all_segment_criteria_text):
     if dmos_df.empty: return []
     print("Analisando DMOs...")
     
-    # <--- MELHORIA: Faz o merge com os detalhes para obter CreatedDate e CreatedById --->
     if not dmo_details_df.empty:
         dmo_details_df = dmo_details_df.rename(columns={'Id': 'id'})
         dmos_df = pd.merge(dmos_df, dmo_details_df[['id', 'CreatedDate', 'CreatedById']], on='id', how='left')
@@ -154,9 +162,7 @@ def analyze_dmos(dmos_df, dmo_details_df, segments_df, activations_df, ci_expres
 
     results = []
     
-    # Prepara listas de DMOs em uso (dados já normalizados)
     dmos_used_in_ci = set(ci_expression_df['expression.table'].unique()) if not ci_expression_df.empty else set()
-    all_segment_criteria = segments_df['IncludeCriteria'].astype(str) + segments_df['ExcludeCriteria'].astype(str) if not segments_df.empty else pd.Series(dtype=str)
     
     dmos_used_in_activations = set()
     if not activations_df.empty:
@@ -167,29 +173,29 @@ def analyze_dmos(dmos_df, dmo_details_df, segments_df, activations_df, ci_expres
     dmos_df['CreatedDate_dt'] = pd.to_datetime(dmos_df['CreatedDate'], errors='coerce')
         
     for _, row in dmos_df.iterrows():
-        dmo_name_lower = row['name'] # Já está em minúsculas
+        dmo_name_lower = row['name']
         if dmo_name_lower.startswith(DMO_PREFIXES_TO_EXCLUDE): continue
         if not pd.isna(row['CreatedDate_dt']) and (TODAY - row['CreatedDate_dt']) < timedelta(days=90): continue
             
         if not dmo_name_lower.endswith('__dlm'): continue
         if dmo_name_lower in dmos_used_in_ci: continue
-        if any(dmo_name_lower in criteria for criteria in all_segment_criteria): continue
         if dmo_name_lower in dmos_used_in_activations: continue
+        
+        # <--- OTIMIZAÇÃO: Substitui o loop 'any' por uma busca rápida em uma string única --->
+        if dmo_name_lower in all_segment_criteria_text: continue
         
         reason = "É customizado (__dlm), não usado em Segmentos, Ativações ou CIs"
         reason += " e criado há mais de 90 dias." if 'CreatedDate' in dmos_df.columns and not pd.isna(row['CreatedDate_dt']) else "."
         
-        # <--- MELHORIA: Popula o nome do criador usando o user_map --->
         created_by_name = user_map.get(row['CreatedById'], "N/A")
         results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['name'], "OBJECT_TYPE": "DMO", "DELETION_IDENTIFIER": row['name'], "DISPLAY_NAME": row['label'], "STATUS": "ORFAO", "Reason": reason, "CREATED_BY_NAME": created_by_name})
     return results
 
-# <--- MELHORIA: Função agora recebe stream_details_df e user_map --->
+
 def analyze_data_streams(streams_df, stream_details_df, mappings_df, user_map):
     if streams_df.empty: return []
     print("Analisando Data Streams...")
     
-    # <--- MELHORIA: Usa stream_details_df como fonte primária para data de criação --->
     if not stream_details_df.empty:
         streams_with_details = pd.merge(streams_df, stream_details_df, on='Id', how='left', suffixes=('', '_details'))
     else:
@@ -209,7 +215,7 @@ def analyze_data_streams(streams_df, stream_details_df, mappings_df, user_map):
         is_older_than_30_days = pd.isna(row['LastRefreshDate_dt']) or (TODAY - row['LastRefreshDate_dt']) > timedelta(days=30)
         if not is_older_than_30_days: continue
         
-        dlo_name_lower = row['dataLakeObjectInfo.name'] # Já está em minúsculas
+        dlo_name_lower = row['dataLakeObjectInfo.name']
         has_mapping = dlo_name_lower in dlos_with_mappings
         
         if has_mapping:
@@ -219,7 +225,8 @@ def analyze_data_streams(streams_df, stream_details_df, mappings_df, user_map):
         
         if status:
             created_by_name = user_map.get(row['CreatedById'], "N/A")
-            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['dataLakeObjectInfo.name'], "OBJECT_TYPE": "DATA_STREAM", "DELETION_IDENTIFIER": row['dataLakeObjectInfo.name'], "DISPLAY_NAME": row['Name_details'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": created_by_name})
+            display_name = row['Name_details'] if 'Name_details' in row else row.get('Name', 'N/A')
+            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['dataLakeObjectInfo.name'], "OBJECT_TYPE": "DATA_STREAM", "DELETION_IDENTIFIER": row['dataLakeObjectInfo.name'], "DISPLAY_NAME": display_name, "STATUS": status, "Reason": reason, "CREATED_BY_NAME": created_by_name})
     return results
 
 def analyze_calculated_insights(ci_df, user_map):
@@ -241,7 +248,6 @@ def main():
     if not authenticate_jwt(SF_LOGIN_URL, SF_CLIENT_ID, SF_USERNAME, SF_PRIVATE_KEY_FILE):
         return
     
-    # <--- MELHORIA: Adicionados os arquivos de "details" para DMOs e Data Streams --->
     files_to_load = {
         "segments": "MarketSegment.csv", 
         "activations": "ActivationDetails.csv",
@@ -259,7 +265,6 @@ def main():
     dfs = load_data_from_csv(files_to_load)
     if not dfs: return
 
-    # <--- NOVO: Normaliza os dataframes logo após o carregamento --->
     dfs = normalize_dataframes(dfs)
 
     user_map = {row['Id']: row['Name'] for _, row in dfs.get("users", pd.DataFrame()).iterrows()} if "users" in dfs and not dfs["users"].empty else {}
@@ -269,13 +274,18 @@ def main():
     segments_df = dfs.get("segments", pd.DataFrame())
     
     segment_results = analyze_segments(segments_df, activations_df, user_map)
-    # <--- ALTERADO: Converte para minúsculas para garantir o match --->
     segments_to_delete_ids = {str(res['ID_OR_API_NAME']).lower() for res in segment_results}
     
     activation_results = analyze_activations(activations_df, segments_to_delete_ids)
     
-    # <--- MELHORIA: Passa os dataframes de detalhes e o user_map para as funções de análise --->
-    dmo_results = analyze_dmos(dfs.get("dmos", pd.DataFrame()), dfs.get("dmo_details", pd.DataFrame()), segments_df, activations_df, dfs.get("ci_expression", pd.DataFrame()), user_map)
+    # <--- OTIMIZAÇÃO: Pré-calcula a "string gigante" de critérios dos segmentos --->
+    if not segments_df.empty:
+        all_segment_criteria_text = ' '.join(segments_df['IncludeCriteria'].fillna('') + segments_df['ExcludeCriteria'].fillna(''))
+    else:
+        all_segment_criteria_text = ''
+        
+    dmo_results = analyze_dmos(dfs.get("dmos", pd.DataFrame()), dfs.get("dmo_details", pd.DataFrame()), activations_df, dfs.get("ci_expression", pd.DataFrame()), user_map, all_segment_criteria_text)
+    
     stream_results = analyze_data_streams(dfs.get("streams", pd.DataFrame()), dfs.get("stream_details", pd.DataFrame()), dfs.get("mappings", pd.DataFrame()), user_map)
     ci_results = analyze_calculated_insights(dfs.get("cis", pd.DataFrame()), user_map)
     
@@ -287,7 +297,7 @@ def main():
     final_df = pd.DataFrame(final_results)
     final_df.drop_duplicates(subset=['ID_OR_API_NAME', 'OBJECT_TYPE'], inplace=True, keep='first')
     
-    output_filename = 'audit_objetos_para_exclusao.csv'
+    output_filename = 'relatorio_delecao_final.csv'
     final_df = final_df[["DELETAR", "ID_OR_API_NAME", "OBJECT_TYPE", "DELETION_IDENTIFIER", "DISPLAY_NAME", "STATUS", "Reason", "CREATED_BY_NAME"]]
     final_df.to_csv(output_filename, index=False)
     
