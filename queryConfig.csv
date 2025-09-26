@@ -3,40 +3,40 @@ queryType,query
 ### Metadados e Objetos Base (Tooling & Standard) ###
 ###
 # Necessário para obter data de criação e criador dos DMOs, usado em ambos os scripts.
-#Tooling,"SELECT Id, CreatedById, CreatedDate FROM MktDataModelObject --DataModelObjectsDetails"
+#Tooling,"SELECT Id AS id, CreatedById AS createdbyid, CreatedDate AS createddate FROM MktDataModelObject --DataModelObjectsDetails"
 # Necessário para a análise de Data Streams no script auditObjects.py.
-#Standard,"SELECT Id,CreatedById,CreatedDate,Name FROM DataStream --DataStreamDetails"
+#Standard,"SELECT Id AS id, CreatedById AS createdbyid, CreatedDate AS createddate, Name AS name FROM DataStream --DataStreamDetails"
 # Utilizado para mapear IDs de usuários para nomes em ambos os scripts.
-Standard,"SELECT Id, Name FROM User --Users"
+#Standard,"SELECT Id AS id, Name AS name FROM User --Users"
 # Utilizado para identificar e excluir chaves primárias na análise de campos.
-#Tooling,"SELECT Id, DeveloperName, MktDataModelObjectId, KeyQualifierName FROM MktDataModelField"
+#Tooling,"SELECT Id AS id, DeveloperName AS developername, MktDataModelObjectId AS mktdatamodelobjectid, KeyQualifierName AS keyqualifiername FROM MktDataModelField"
 
 ###
 ### Segmentos e Ativações (Bulk) ###
 ###
 # Otimizado para conter apenas os campos usados em filtros, lógicas de data e identificadores.
-#Bulk,"SELECT Id, CreatedById, Name, IncludeCriteria, ExcludeCriteria, LastPublishedEndDateTime FROM MarketSegment"
+#Bulk,"SELECT Id AS id, CreatedById AS createdbyid, Name AS name, IncludeCriteria AS includecriteria, ExcludeCriteria AS excludecriteria, LastPublishedEndDateTime AS lastpublishedenddatetime FROM MarketSegment"
 # Otimizado para extrair apenas o ID, que é usado como parâmetro de iteração para a consulta de ActivationDetails.
-#Bulk,"SELECT Id FROM MarketSegmentActivation"
+#Bulk,"SELECT Id AS id FROM MarketSegmentActivation"
 
 ###
 ### Extrações SSOT (Single Source of Truth) ###
 ### 
 # Otimizado para extrair apenas o 'name', usado como parâmetro para outras consultas.
-#ssot,"SELECT name FROM data-spaces?entryPoint=dataSpaces --DataSpaces"
+#ssot,"SELECT name AS name FROM data-spaces?entryPoint=dataSpaces --DataSpaces"
 # Otimizado para extrair os campos de identificação, rótulo e a lista de campos aninhados.
-#ssot,"SELECT id, name, label, fields.name, fields.label FROM data-model-objects?offset=0&entryPoint=dataModelObject --DataModelObjects"
+#ssot,"SELECT id AS id, name AS name, label AS label, fields.name AS fields_name, fields.label AS fields_label FROM data-model-objects?offset=0&entryPoint=dataModelObject --DataModelObjects"
 # Otimizado para fornecer os IDs e nomes que o auditObjects.py espera. O alias é importante para o script funcionar corretamente.
-#ssot,"SELECT recordId AS Id, name AS Name, dataLakeObjectInfo.name FROM data-streams?limit=200&entryPoint=dataStreams --DataStreams"
+#ssot,"SELECT recordId AS recordid, name AS name, dataLakeObjectInfo.name AS datalakeobjectinfo_name FROM data-streams?limit=200&entryPoint=dataStreams --DataStreams"
 # Otimizado para campos de status e identificação, incluindo 'CreatedById' e 'expression' para análises posteriores.
-#ssot,"SELECT apiName, displayName, lastRunDateTime, lastRunStatus, createdBy.id AS CreatedById, expression FROM calculated-insights?limit=200&entryPoint=collection.items&sourceIteration=DataSpaces&parameterName=dataspace&sourceParameter=name --CalculatedInsights"
+ssot,"SELECT apiName AS apiname, displayName AS displayname, lastRunDateTime AS lastrundatetime, lastRunStatus AS lastrunstatus, expression AS expression FROM calculated-insights?limit=200&entryPoint=collection.items&sourceIteration=DataSpaces&parameterName=dataspace&sourceParameter=name --CalculatedInsights"
 # Otimizado para extrair apenas o campo necessário para a análise de mapeamentos.
-#ssot,"SELECT sourceEntityDeveloperName FROM data-model-object-mappings?entryPoint=objectSourceTargetMaps&sourceIteration=DataModelObjects&parameterName=dmoDeveloperName&sourceParameter=name&parameterName=dataspace&sourceParameter=dataSpaceName&correlationField=developerName --DMOMappings"
+#ssot,"SELECT sourceEntityDeveloperName AS sourceentitydevelopername FROM data-model-object-mappings?entryPoint=objectSourceTargetMaps&sourceIteration=DataModelObjects&parameterName=dmoDeveloperName&sourceParameter=name&parameterName=dataspace&sourceParameter=dataSpaceName&correlationField=developerName --Mappings"
 # Otimizado para extrair apenas os campos relacionados à identificação, ao segmento e aos nomes de entidades usadas como atributos.
-#ssot,"SELECT id, name, marketSegmentId, activationTargetSubjectConfig.developerName, attributesConfig.attributes.entityName, attributesConfig.attributes.name, contactPointsConfig.contactPoints.contactPointEntityName FROM activations?entryPoint.=&sourceIteration=MarketSegmentActivation&parameterName=/&sourceParameter=Id&correlationField=id --ActivationDetails"
+#ssot,"SELECT id AS id, name AS name, marketSegmentId AS marketsegmentid, activationTargetSubjectConfig.developerName AS activationtargetsubjectconfig_developername, attributesConfig.attributes.entityName AS attributesconfig_attributes_entityname, attributesConfig.attributes.name AS attributesconfig_attributes_name, contactPointsConfig.contactPoints.contactPointEntityName AS contactpointsconfig_contactpoints_contactpointentityname FROM activations?entryPoint.=&sourceIteration=MarketSegmentActivation&parameterName=/&sourceParameter=Id&correlationField=id --ActivationDetails"
 
 ###
 ### Análise Local a partir de Arquivos Extraídos ###
 ###
 # Extrai as tabelas e campos da coluna 'expression' do arquivo CalculatedInsights.csv.
-#localSQL,"SELECT expression.table, expression.field FROM CalculatedInsights WHERE expression IS expression --CIExpression"
+localSQL,"SELECT expression.table AS expression_table, expression.field AS expression_field FROM CalculatedInsights WHERE expression IS expression --CIExpression"
