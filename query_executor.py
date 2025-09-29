@@ -244,40 +244,74 @@ def wait_for_job_completion(auth: SalesforceAuthenticator, api_version: str, job
             return "Failed", 0
 
 def download_bulk_results(auth: SalesforceAuthenticator, api_version: str, job_id: str, output_file: str, header_fields: Optional[List[str]] = None) -> bool:
+    """
+    Downloads Bulk API results, handling pagination via Sforce-Locator.
+    If header_fields are provided, they are used as the CSV header.
+    Otherwise, the header from the Salesforce result is used.
+    """
     print(f"⬇️ Starting to download Bulk API results to {output_file}...")
     _, instance_url = auth.get_credentials()
-    results_url = f"{instance_url}/services/data/{api_version}/jobs/query/{job_id}/results"
+    
+    # URL inicial para buscar o primeiro lote de resultados
+    base_results_url = f"{instance_url}/services/data/{api_version}/jobs/query/{job_id}/results"
+    
     headers = {"Accept-Encoding": "gzip"}
+    is_first_request = True
+    locator = None
+
     try:
-        response = make_resilient_request(auth, 'get', results_url, headers=headers, stream=True)
-        response.raise_for_status()
-        raw_content = response.content
-        
-        try:
-            decoded_content = gzip.decompress(raw_content).decode('utf-8')
-        except gzip.BadGzipFile:
-            decoded_content = raw_content.decode('utf-8')
-        
-        lines = decoded_content.strip().splitlines()
-        reader = csv.reader(lines)
-        
         with open(output_file, 'w', newline='', encoding='utf-8') as out_f:
             writer = csv.writer(out_f)
-            original_header = next(reader)
             
-            if header_fields:
-                writer.writerow(header_fields)
-            else:
-                writer.writerow(original_header)
-            
-            for row in reader:
-                sanitized_row = [' '.join(field.split()) for field in row]
-                writer.writerow(sanitized_row)
+            while is_first_request or locator:
+                # Constrói a URL da requisição. Se houver um locator, adiciona como parâmetro.
+                request_url = f"{base_results_url}?locator={locator}" if locator else base_results_url
+                
+                response = make_resilient_request(auth, 'get', request_url, headers=headers, stream=True)
+                response.raise_for_status()
 
-        print(f"✅ Results downloaded and saved to {output_file}")
+                raw_content = response.content
+                
+                try:
+                    decoded_content = gzip.decompress(raw_content).decode('utf-8')
+                except gzip.BadGzipFile:
+                    decoded_content = raw_content.decode('utf-8')
+                
+                lines = decoded_content.strip().splitlines()
+                if not lines:
+                    break # Encerra se a resposta estiver vazia
+
+                reader = csv.reader(lines)
+                
+                # Para a primeira requisição, processa o cabeçalho
+                if is_first_request:
+                    original_header = next(reader)
+                    if header_fields:
+                        writer.writerow(header_fields)
+                    else:
+                        writer.writerow(original_header)
+                    is_first_request = False
+                else:
+                    # Para os lotes seguintes, ignora o cabeçalho
+                    next(reader)
+
+                # Escreve as linhas de dados no arquivo
+                for row in reader:
+                    sanitized_row = [' '.join(field.split()) for field in row]
+                    writer.writerow(sanitized_row)
+                
+                # Verifica se há um próximo lote de resultados
+                locator = response.headers.get('Sforce-Locator')
+                if locator:
+                    print(f"  ➡️  Found next batch with locator: {locator[:10]}...")
+
+        print(f"✅ All result batches downloaded and saved to {output_file}")
         return True
     except requests.exceptions.RequestException as e:
         print(f"❌ Error downloading and writing results: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ An unexpected error occurred during bulk download: {e}")
         return False
 
 
