@@ -25,7 +25,7 @@ SF_LOGIN_URL = os.getenv("SF_LOGIN_URL")
 SF_API_VERSION = "v64.0"
 SF_CLIENT_ID = os.getenv("SF_CLIENT_ID")
 SF_USERNAME = os.getenv("SF_USERNAME")
-SF_PRIVATE_KEY_FILE = os.getenv("SF_PRIVATE_KEY_FILE")
+SF_PRIVATE_KEY_FILE = os.getenv("SF_PRIVATE_KEY_FILE", "private.pem")
 
 USE_PROXY = os.getenv("USE_PROXY", "False").lower() == "true"
 PROXY_URL = os.getenv("PROXY_URL")
