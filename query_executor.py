@@ -1,28 +1,3 @@
-#
-# Salesforce Bulk, REST, Tooling, & SSOT API Query Program with JWT Bearer Token Authentication
-#
-# This script performs the following steps:
-# 1. Reads a list of queries from a 'QueryConfig.csv' file, skipping commented lines.
-# 2. Authenticates with Salesforce using the JWT Bearer Token flow.
-# 3. Creates the specified output directory if it does not exist.
-# 4. For each query, it executes using the specified API type:
-#    a) Bulk API 2.0 ("Bulk"): For very large data sets.
-#    b) Standard REST Query API ("Standard"): For smaller to medium data sets.
-#    c) Tooling REST Query API ("Tooling"): For querying metadata and developer objects.
-#    d) SSOT REST API ("ssot"): For querying SSOT objects via a direct REST endpoint.
-#    e) Job Monitoring ("job"): For monitoring an existing Bulk API job and downloading results.
-#    f) Local Parse ("localParse"): For parsing and extracting data from existing local CSV files.
-#    g) Local SQL ("localSQL"): For extracting table and field names from SQL queries in local CSV files.
-# 5. Writes the results for each query to a separate CSV file in the output directory,
-#    named dynamically based on the object (e.g., Account_Demo.csv).
-#
-# Prerequisites:
-# - A 'QueryConfig.csv' file in the same directory as this script.
-# - A connected app in Salesforce with JWT enabled.
-# - A private key file (`server.key` or similar) and a public certificate.
-# - Required libraries installed: pip install requests pyjwt cryptography python-dotenv tqdm
-#
-
 import requests
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -58,8 +33,7 @@ VERIFY_SSL = os.getenv("VERIFY_SSL", "True").lower() == "true"
 
 # Configuration for query file and output file naming
 QUERY_CONFIG_FILE = "QueryConfig.csv"
-OUTPUT_DIRECTORY = "ProdSept20"
-OUTPUT_FILE_SUFFIX = "ProdSept20"
+OUTPUT_DIRECTORY = "dataExtract"
 RATE_LIMIT_PAUSE_MINUTES = 10
 BULK_JOB_POLL_INTERVAL_SECONDS = 10
 MAX_WORKERS = 10
@@ -683,7 +657,7 @@ def execute_ssot_query(auth: SalesforceAuthenticator, api_version: str, pseudo_s
         
         if source_iteration_file and param_names_for_request and source_param_columns:
             # --- Iterative Mode ---
-            full_source_filename = f"{source_iteration_file}_{OUTPUT_FILE_SUFFIX}.csv"
+            full_source_filename = f"{source_iteration_file}.csv"
             source_file_path = os.path.join(OUTPUT_DIRECTORY, full_source_filename)
             print(f"▶️  Entering iterative mode based on source file: '{full_source_filename}'")
             try:
@@ -823,7 +797,7 @@ def execute_local_parse_query(query: str, output_file: str) -> Tuple[int, int]:
             print("❌ 'localParse' query requires a 'WHERE' clause with 'IS' aliases. Skipping.")
             return 0, 0
 
-        source_filename = f"{source_file_base}_{OUTPUT_FILE_SUFFIX}.csv"
+        source_filename = f"{source_file_base}.csv"
         source_filepath = os.path.join(OUTPUT_DIRECTORY, source_filename)
         print(f"▶️  Reading local source file: '{source_filepath}'")
         with open(source_filepath, mode='r', encoding='utf-8') as infile:
@@ -905,7 +879,7 @@ def execute_local_sql_query(query: str, output_file: str) -> Tuple[int, int]:
             print("❌ 'localSQL' query requires a 'WHERE' clause with 'IS' aliases. Skipping.")
             return 0, 0
 
-        source_filename = f"{source_file_base}_{OUTPUT_FILE_SUFFIX}.csv"
+        source_filename = f"{source_file_base}.csv"
         source_filepath = os.path.join(OUTPUT_DIRECTORY, source_filename)
         print(f"▶️  Reading local source file: '{source_filepath}'")
         with open(source_filepath, mode='r', encoding='utf-8') as infile:
@@ -1009,7 +983,7 @@ if __name__ == "__main__":
                     where_split = re.split(" WHERE ", from_clause, flags=re.IGNORECASE)
                     full_object_name = where_split[0].strip().split(" ")[0]
                     object_api_name_for_file = full_object_name.split("?")[0]
-                file_name = f"{object_api_name_for_file}_{OUTPUT_FILE_SUFFIX}.csv"
+                file_name = f"{object_api_name_for_file}.csv"
                 output_file = os.path.join(OUTPUT_DIRECTORY, file_name)
                 print(f"\n{'='*60}\n▶️  Processing query for object: {object_api_name_for_file}\n{'='*60}")
             except IndexError:
