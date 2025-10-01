@@ -1,4 +1,3 @@
-# createdbyid,createddate,datagraphid,dataspaceid,description,excludecriteria,groupsortlimitfiltercriteria,id,includecriteria,iscurrentsaveapproxcount,isdeleted,isprevsaveapproxcount,isremote,isseedsegment,lastmodifiedbyid,lastmodifieddate,lastpublishedenddatetime,lastpublishstatusdatetime,lastpublishstatuserrorcode,lastreferenceddate,lastseedmodelrundatetime,lastseedmodelstatusdatetime,lastseedmodelstatuserrorcode,lastsegmentcountenddatetime,lastsegmentexcludedcount,lastsegmentexcludedcounterror,lastsegmentincludedcount,lastsegmentmembercount,lastsegmentmembercounterror,lastsegmentremaindercount,lastsegmentstatusdatetime,lastsegmentstatuserrorcode,lastsegmentstatuserrordetails,lastsegmenttotalcount,lastvieweddate,lookbackperiod,marketsegmenttype,name,nextpublishdatetime,ownedby,publishscheduleenddate,publishscheduleenddatetime,publishscheduleinfo,publishscheduleinterval,publishschedulestartdatetime,publishstatus,publishtype,seedmodelstatus,seedsimilarity,seedsimilarityhightomedium,seedsimilaritymediumtolow,segmentmembershipdatamodellist,segmentmembershiptable,segmentstatus,sourcemarketsegment,systemmodstamp
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 import os
@@ -11,7 +10,6 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 # --- 1. Configuração e Autenticação ---
-
 load_dotenv()
 SF_LOGIN_URL = os.getenv("SF_LOGIN_URL", "https://login.salesforce.com")
 SF_CLIENT_ID = os.getenv("SF_CLIENT_ID")
@@ -22,7 +20,7 @@ PROXY_URL = os.getenv("PROXY_URL")
 VERIFY_SSL = os.getenv("VERIFY_SSL", "False").lower() == "true"
 proxies = {'http': PROXY_URL, 'https': PROXY_URL} if USE_PROXY else None
 TODAY = datetime.now(timezone.utc)
-DMO_PREFIXES_TO_EXCLUDE = ('ssot', 'unified', 'individual', 'einstein', 'segment_membership', 'aa_', 'aal_', 'ibb_', 'iub_')
+DMO_PREFIXES_TO_EXCLUDE = ('ssot', 'unified', 'individual','Individual', 'einstein', 'segment_membership', 'AA_', 'aa_', 'aal_', 'AAL_', 'ibb_', 'iub_')
 
 def get_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -47,8 +45,7 @@ def authenticate_jwt(login_url, client_id, username, private_key_file):
     print(f"{get_timestamp()} 🚫  A análise não pode continuar devido à falha na autenticação.")
     return False
 
-# --- 2. Carregamento e Preparação dos Dados ---
-
+# --- 2. Carregamento de Dados ---
 def load_data_from_csv(files_to_load):
     print(f"\n{get_timestamp()} 📂 Carregando arquivos CSV do diretório 'dataExtract' para análise...")
     dataframes = {}
@@ -56,13 +53,14 @@ def load_data_from_csv(files_to_load):
     for name, path in files_to_load.items():
         try:
             full_path = os.path.join(input_directory, path)
+            # Lê todos os IDs como string para garantir a consistência na comparação
+            df = pd.read_csv(full_path, low_memory=False, dtype=str)
+            
             if name.startswith("activations"):
                 if "activations" not in dataframes:
                     dataframes["activations"] = []
-                df = pd.read_csv(full_path, low_memory=False, dtype={'marketsegmentid': str, 'segmentid': str})
                 dataframes["activations"].append(df)
             else:
-                df = pd.read_csv(full_path, low_memory=False)
                 dataframes[name] = df
         except FileNotFoundError:
             print(f"{get_timestamp()}    - ⚠️  AVISO: Arquivo '{path}' não encontrado no diretório '{input_directory}'. Será ignorado.")
@@ -84,24 +82,31 @@ def analyze_segments(segments_df, activations_df, user_map):
     if segments_df.empty: return []
     
     results = []
-    segments_with_activations = set(activations_df['marketsegmentid'].unique()) if 'marketsegmentid' in activations_df.columns and not activations_df.empty else set()
-    all_criteria = segments_df['includecriteria'].fillna('') + segments_df['excludecriteria'].fillna('')
     
-    def is_used_as_filter(segment_id, current_index):
-        other_criteria = all_criteria.drop(current_index)
-        return other_criteria.str.contains(segment_id, na=False, case=False).any()
-
+    # --- CORREÇÃO FINAL E ROBUSTA ---
+    # Limpa (strip) e padroniza (lower) os IDs de AMBOS os lados para garantir uma correspondência 100% precisa,
+    # eliminando problemas de whitespace ou case.
+    if 'marketsegmentid' in activations_df.columns and not activations_df.empty:
+        segments_with_activations = set(activations_df['marketsegmentid'].dropna().astype(str).str.strip().str.lower())
+    else:
+        segments_with_activations = set()
+    
+    all_criteria_text = ' '.join(segments_df['includecriteria'].fillna('') + segments_df['excludecriteria'].fillna('')).lower()
+    
     segments_df['lastpublishedenddatetime_dt'] = pd.to_datetime(segments_df['lastpublishedenddatetime'], errors='coerce')
     
-    for index, row in tqdm(segments_df.iterrows(), total=segments_df.shape[0], desc=f"{get_timestamp()} Analisando Segmentos"):
+    for _, row in tqdm(segments_df.iterrows(), total=segments_df.shape[0], desc=f"{get_timestamp()} Analisando Segmentos"):
         status, reason = None, None
         is_older_than_30_days = pd.isna(row['lastpublishedenddatetime_dt']) or (TODAY - row['lastpublishedenddatetime_dt']) > timedelta(days=30)
         if not is_older_than_30_days: continue
 
-        segment_id = row['id']
-        used_as_filter = is_used_as_filter(segment_id, index)
+        # Limpa o ID do segmento da mesma forma antes de comparar
+        segment_id = str(row['id']).strip().lower()
+        
+        used_as_filter = segment_id in all_criteria_text
         has_activation = segment_id in segments_with_activations
         
+        # Lógica para determinar o status do segmento
         if not used_as_filter:
             if has_activation:
                 status, reason = "INATIVO", "Última publicação > 30 dias e não usado como filtro, mas possui ativação relacionada."
@@ -111,7 +116,9 @@ def analyze_segments(segments_df, activations_df, user_map):
              status, reason = "INATIVO", "Última publicação > 30 dias, mas é usado como filtro em outro segmento."
         
         if status:
+            # Mantemos o ID original no relatório final
             results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "SEGMENT", "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": user_map.get(row['createdbyid'], row['createdbyid'])})
+            
     print(f"{get_timestamp()} Análise de Segmentos concluída.")
     return results
 
@@ -154,7 +161,7 @@ def analyze_dmos(dmos_df, dmo_details_df, activations_df, ci_expression_df, user
         
     for _, row in tqdm(dmos_df.iterrows(), total=dmos_df.shape[0], desc=f"{get_timestamp()} Analisando DMOs"):
         dmo_name = row['name']
-        if dmo_name.startswith(DMO_PREFIXES_TO_EXCLUDE): continue
+        if any(dmo_name.startswith(p) for p in DMO_PREFIXES_TO_EXCLUDE): continue
         if not pd.isna(row['createddate_dt']) and (TODAY - row['createddate_dt']) < timedelta(days=90): continue
         if not dmo_name.endswith('__dlm'): continue
         if dmo_name in dmos_used_in_ci: continue
@@ -172,11 +179,9 @@ def analyze_dmos(dmos_df, dmo_details_df, activations_df, ci_expression_df, user
 def analyze_data_streams(streams_df, stream_details_df, mappings_df, user_map):
     if streams_df.empty: return []
     
-    # <--- OTIMIZAÇÃO: Remove linhas duplicadas para analisar cada stream apenas uma vez --->
     streams_unique_df = streams_df.drop_duplicates(subset=['recordid']).copy()
     
     if not stream_details_df.empty:
-        # <--- CORRIGIDO: O merge agora usa 'recordid' do streams_df e 'id' do stream_details_df --->
         streams_with_details = pd.merge(streams_unique_df, stream_details_df, left_on='recordid', right_on='id', how='left', suffixes=('', '_details'))
     else:
         streams_with_details = streams_unique_df.copy()
@@ -230,19 +235,17 @@ def main():
     if not authenticate_jwt(SF_LOGIN_URL, SF_CLIENT_ID, SF_USERNAME, SF_PRIVATE_KEY_FILE):
         return
     
-    files_to_load = {
-        "segments": "MarketSegment.csv", 
-        "activations": "ActivationDetails.csv",
-        "dmos": "DataModelObjects.csv",
-        "dmo_details": "DataModelObjectsDetails.csv", 
-        "streams": "DataStreams.csv",
-        "stream_details": "DataStreamDetails.csv",
-        "dlos": "DataLakeObjects.csv", 
-        "cis": "CalculatedInsights.csv", 
-        "ci_expression": "CIExpression.csv", 
-        "mappings": "Mappings.csv", 
-        "users": "Users.csv"
-    }
+    files_to_load = { "segments": "MarketSegment.csv", 
+                     "activations": "ActivationDetails.csv",
+                    "dmos": "DataModelObjects.csv", 
+                    "dmo_details": "DataModelObjectsDetails.csv", 
+                    "streams": "DataStreams.csv", 
+                    "stream_details": "DataStreamDetails.csv", 
+                    "dlos": "DataLakeObjects.csv", 
+                    "cis": "CalculatedInsights.csv", 
+                    "ci_expression": "CIExpression.csv", 
+                    "mappings": "mappings.csv", 
+                    "users": "Users.csv" }
     
     dfs = load_data_from_csv(files_to_load)
     if not dfs: return
@@ -264,7 +267,6 @@ def main():
         all_segment_criteria_text = ''
         
     dmo_results = analyze_dmos(dfs.get("dmos", pd.DataFrame()), dfs.get("dmo_details", pd.DataFrame()), activations_df, dfs.get("ci_expression", pd.DataFrame()), user_map, all_segment_criteria_text)
-    
     stream_results = analyze_data_streams(dfs.get("streams", pd.DataFrame()), dfs.get("stream_details", pd.DataFrame()), dfs.get("mappings", pd.DataFrame()), user_map)
     ci_results = analyze_calculated_insights(dfs.get("cis", pd.DataFrame()), user_map)
     
@@ -276,7 +278,7 @@ def main():
     final_df = pd.DataFrame(final_results)
     final_df.drop_duplicates(subset=['ID_OR_API_NAME', 'OBJECT_TYPE'], inplace=True, keep='first')
     
-    output_filename = 'relatorio_delecao_final.csv'
+    output_filename = 'audit_objetos_para_exclusao.csv'
     final_df = final_df[["DELETAR", "ID_OR_API_NAME", "OBJECT_TYPE", "DELETION_IDENTIFIER", "DISPLAY_NAME", "STATUS", "Reason", "CREATED_BY_NAME"]]
     final_df.to_csv(output_filename, index=False)
     

@@ -1,3 +1,28 @@
+#
+# Salesforce Bulk, REST, Tooling, & SSOT API Query Program with JWT Bearer Token Authentication
+#
+# This script performs the following steps:
+# 1. Reads a list of queries from a 'QueryConfig.csv' file, skipping commented lines.
+# 2. Authenticates with Salesforce using the JWT Bearer Token flow.
+# 3. Creates the specified output directory if it does not exist.
+# 4. For each query, it executes using the specified API type:
+#    a) Bulk API 2.0 ("Bulk"): For very large data sets.
+#    b) Standard REST Query API ("Standard"): For smaller to medium data sets.
+#    c) Tooling REST Query API ("Tooling"): For querying metadata and developer objects.
+#    d) SSOT REST API ("ssot"): For querying SSOT objects via a direct REST endpoint.
+#    e) Job Monitoring ("job"): For monitoring an existing Bulk API job and downloading results.
+#    f) Local Parse ("localParse"): For parsing and extracting data from existing local CSV files.
+#    g) Local SQL ("localSQL"): For extracting table and field names from SQL queries in local CSV files.
+# 5. Writes the results for each query to a separate CSV file in the output directory,
+#    named dynamically based on the object (e.g., Account_Demo.csv).
+#
+# Prerequisites:
+# - A 'QueryConfig.csv' file in the same directory as this script.
+# - A connected app in Salesforce with JWT enabled.
+# - A private key file (`server.key` or similar) and a public certificate.
+# - Required libraries installed: pip install requests pyjwt cryptography python-dotenv tqdm
+#
+
 import requests
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -25,7 +50,7 @@ SF_LOGIN_URL = os.getenv("SF_LOGIN_URL")
 SF_API_VERSION = "v64.0"
 SF_CLIENT_ID = os.getenv("SF_CLIENT_ID")
 SF_USERNAME = os.getenv("SF_USERNAME")
-SF_PRIVATE_KEY_FILE = os.getenv("SF_PRIVATE_KEY_FILE", "private.pem")
+SF_PRIVATE_KEY_FILE = os.getenv("SF_PRIVATE_KEY_FILE")
 
 USE_PROXY = os.getenv("USE_PROXY", "False").lower() == "true"
 PROXY_URL = os.getenv("PROXY_URL")
@@ -36,7 +61,7 @@ QUERY_CONFIG_FILE = "QueryConfig.csv"
 OUTPUT_DIRECTORY = "dataExtract"
 RATE_LIMIT_PAUSE_MINUTES = 10
 BULK_JOB_POLL_INTERVAL_SECONDS = 10
-MAX_WORKERS = 5
+MAX_WORKERS = 2
 
 proxies = {'http': PROXY_URL, 'https': PROXY_URL} if USE_PROXY else None
 
