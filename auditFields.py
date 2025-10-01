@@ -22,7 +22,7 @@ VERIFY_SSL = os.getenv("VERIFY_SSL", "False").lower() == "true"
 proxies = {'http': PROXY_URL, 'https': PROXY_URL} if USE_PROXY else None
 TODAY = datetime.now(timezone.utc)
 
-DMO_PREFIXES_TO_EXCLUDE = ('ssot', 'unified', 'individual','Individual', 'einstein', 'segment_membership', 'AA_', 'aa_', 'aal_', 'AAL_', 'ibb_', 'iub_')
+DMO_PREFIXES_TO_EXCLUDE = ('ssot', 'unified', 'individual', 'einstein', 'segment_membership', 'aa_', 'aal_')
 
 STATIC_FIELDS_TO_EXCLUDE = {
     'datasource__c', 
@@ -45,9 +45,9 @@ def authenticate_jwt(login_url, client_id, username, private_key_file):
         print("✅  Autenticação bem-sucedida. Prosseguindo com a análise dos arquivos locais.")
         return True
     except FileNotFoundError:
-        print(f"❌ ERRO DE AUTENTICAÇÃO: Arquivo de chave privada não encontrado em '{private_key_file}'")
+        print(f"❌ ERRO DE AUTENTicação: Arquivo de chave privada não encontrado em '{private_key_file}'")
     except Exception as e:
-        print(f"❌ ERRO DE AUTENTICAÇÃO: {e}")
+        print(f"❌ ERRO DE AUTENTicação: {e}")
     print("🚫  A análise não pode continuar devido à falha na autenticação.")
     return False
 
@@ -59,19 +59,15 @@ def load_data_from_csv(files_to_load):
     input_directory = "dataExtract"
     for name, path in files_to_load.items():
         try:
+            df = pd.read_csv(os.path.join(input_directory, path), low_memory=False)
+            df.columns = df.columns.str.lower()
             if name.startswith("activations"):
-                if "activations" not in dataframes:
-                    dataframes["activations"] = []
-                df = pd.read_csv(os.path.join(input_directory, path), low_memory=False)
-                # Garante que os cabeçalhos sejam minúsculos, como esperado
-                df.columns = df.columns.str.lower()
+                if "activations" not in dataframes: dataframes["activations"] = []
                 dataframes["activations"].append(df)
             else:
-                df = pd.read_csv(os.path.join(input_directory, path), low_memory=False)
-                df.columns = df.columns.str.lower()
                 dataframes[name] = df
         except FileNotFoundError:
-            print(f"   - ⚠️  AVISO: Arquivo '{path}' não encontrado no diretório '{input_directory}'. Será ignorado.")
+            print(f"   - ⚠️  AVISO: Arquivo '{path}' não encontrado. Será ignorado.")
             dataframes[name] = pd.DataFrame()
 
     if "activations" in dataframes and isinstance(dataframes["activations"], list):
@@ -91,10 +87,10 @@ def extract_fields_from_segments(segments_df):
 
     for _, row in segments_df.iterrows():
         for col in criteria_columns:
-            json_str = row[col]
-            if pd.isna(json_str) or not isinstance(json_str, str): continue
+            json_str = str(row[col]).lower()
+            if pd.isna(json_str): continue
             
-            matches = re.findall(regex_pattern, json_str, re.IGNORECASE)
+            matches = re.findall(regex_pattern, json_str)
             for dmo, field in matches:
                 used_fields.add((dmo, field))
                 
@@ -106,18 +102,15 @@ def get_all_dmo_fields(dmos_df, dmo_details_df):
         print("❌ ERRO: 'DataModelObjects.csv' vazio ou sem a coluna 'id'.")
         return pd.DataFrame()
     if dmo_details_df.empty or 'id' not in dmo_details_df.columns:
-        print("   - ⚠️  AVISO: 'DataModelObjectsDetails.csv' vazio ou sem a coluna 'id'. As datas de criação não serão preenchidas.")
+        print("   - ⚠️  AVISO: 'DataModelObjectsDetails.csv' vazio ou sem a coluna 'id'.")
         dmo_details_df = pd.DataFrame(columns=['id', 'createddate', 'createdbyid'])
 
     details_subset = dmo_details_df[['id', 'createddate', 'createdbyid']]
-    
     dmos_with_details = pd.merge(dmos_df, details_subset, on='id', how='left')
     
     all_fields_df = dmos_with_details.rename(columns={
-        'name': 'dmo_name',
-        'fields.name': 'field_name',
-        'fields.label': 'field_label',
-        'id': 'dmo_id'
+        'name': 'dmo_name', 'fields.name': 'field_name',
+        'fields.label': 'field_label', 'id': 'dmo_id'
     })
     
     required_cols = ['dmo_name', 'field_name', 'field_label', 'label', 'createddate', 'createdbyid', 'dmo_id']
@@ -131,9 +124,9 @@ def get_fields_if_columns_exist(df, entity_col, field_col, source_name):
     if df.empty: return set()
     if entity_col in df.columns and field_col in df.columns:
         df_filtered = df.dropna(subset=[entity_col, field_col])
-        return set(tuple(row) for row in df_filtered[[entity_col, field_col]].to_numpy())
+        return set( (str(row[0]).lower(), str(row[1]).lower()) for _, row in df_filtered[[entity_col, field_col]].iterrows())
     else:
-        print(f"   - ⚠️  AVISO: Colunas '{entity_col}' e/ou '{field_col}' não encontradas em {source_name}. Pulando esta fonte.")
+        print(f"   - ⚠️  AVISO: Colunas '{entity_col}' e/ou '{field_col}' não encontradas em {source_name}.")
         return set()
 
 # --- 3. Lógica Principal de Análise de Campos ---
@@ -143,13 +136,13 @@ def main():
         return
         
     files_to_load = {
-        "dmos": "DataModelObjects.csv",
+        "dmos": "DataModelObjects.csv", 
         "dmo_details": "DataModelObjectsDetails.csv",
-        "users": "Users.csv",
+        "users": "Users.csv", 
         "mkt_fields": "MktDataModelField.csv",
-        "cis_expression": "CIExpression.csv",
+        "cis_expression": "CIExpression.csv", 
         "segments": "MarketSegment.csv",
-        "activations": "ActivationDetails.csv",
+        "activations": "ActivationDetails.csv"
     }
     
     dfs = load_data_from_csv(files_to_load)
@@ -186,32 +179,44 @@ def main():
     mkt_fields_df = dfs.get("mkt_fields", pd.DataFrame())
     if not mkt_fields_df.empty and 'mktdatamodelobjectid' in mkt_fields_df.columns:
         mkt_fields_subset = mkt_fields_df.rename(columns={'id': 'deletion_identifier'})
-        all_fields_df = pd.merge(all_fields_df, mkt_fields_subset, left_on=['dmo_id', 'field_name'], right_on=['mktdatamodelobjectid', 'developername'], how='left')
+        # Normaliza nomes de campo para o merge
+        mkt_fields_subset['developername'] = mkt_fields_subset['developername'].str.lower()
+        all_fields_df['field_name_lower'] = all_fields_df['field_name'].str.lower()
+        all_fields_df = pd.merge(all_fields_df, mkt_fields_subset, left_on=['dmo_id', 'field_name_lower'], right_on=['mktdatamodelobjectid', 'developername'], how='left').drop(columns=['field_name_lower'])
     else:
         all_fields_df['deletion_identifier'] = None
 
     print("\n   - LOG: Iniciando filtros de exclusão...")
     
-    if not mkt_fields_df.empty and 'developername' in mkt_fields_df.columns and 'keyqualifiername' in mkt_fields_df.columns:
-        kq_field_names = set(mkt_fields_df[mkt_fields_df['developername'].str.startswith('kq_', na=False)]['developername'])
-        main_pk_field_names = set(mkt_fields_df[mkt_fields_df['keyqualifiername'].notna()]['developername'])
-        pointed_to_names = set(mkt_fields_df[mkt_fields_df['keyqualifiername'].notna()]['keyqualifiername'])
-        pk_fields_to_exclude = kq_field_names.union(main_pk_field_names).union(pointed_to_names)
+    # --- INÍCIO DA CORREÇÃO DEFINITIVA NA EXCLUSÃO DE CHAVES ---
+    print("   - LOG: Iniciando exclusão de campos de Chave Primária por convenção de nome...")
+    all_fields_df['field_name_lower'] = all_fields_df['field_name'].astype(str).str.lower()
+    
+    kq_fields = set(all_fields_df[all_fields_df['field_name_lower'].str.startswith('kq_', na=False)]['field_name_lower'])
+    
+    main_pk_fields = set()
+    for kq_field in kq_fields:
+        main_pk_fields.add(kq_field.replace('kq_', '', 1))
         
-        print(f"   - LOG: Encontrados {len(pk_fields_to_exclude)} campos de Chave Primária para excluir.")
-        initial_field_count = len(all_fields_df)
-        all_fields_df = all_fields_df[~all_fields_df['field_name'].isin(pk_fields_to_exclude)]
-        print(f"   - LOG: {initial_field_count - len(all_fields_df)} campos de Chave Primária removidos.")
-    else:
-        print("   - LOG: Colunas para identificar Chaves Primárias não encontradas. Pulando esta exclusão.")
+    pk_fields_to_exclude = kq_fields.union(main_pk_fields)
+    print(f"   - LOG: Encontrados {len(pk_fields_to_exclude)} campos de Chave Primária para excluir (Ex: {list(pk_fields_to_exclude)[:5]}).")
+    
+    initial_field_count = len(all_fields_df)
+    all_fields_df = all_fields_df[~all_fields_df['field_name_lower'].isin(pk_fields_to_exclude)]
+    all_fields_df.drop(columns=['field_name_lower'], inplace=True)
+    print(f"   - LOG: {initial_field_count - len(all_fields_df)} campos de Chave Primária removidos.")
+    # --- FIM DA CORREÇÃO DEFINITIVA NA EXCLUSÃO DE CHAVES ---
 
     print(f"   - LOG: Excluindo {len(STATIC_FIELDS_TO_EXCLUDE)} campos de sistema estáticos.")
     initial_field_count = len(all_fields_df)
-    all_fields_df = all_fields_df[~all_fields_df['field_name'].isin(STATIC_FIELDS_TO_EXCLUDE)]
+    all_fields_df['field_name_lower'] = all_fields_df['field_name'].astype(str).str.lower()
+    all_fields_df = all_fields_df[~all_fields_df['field_name_lower'].isin(STATIC_FIELDS_TO_EXCLUDE)]
+    all_fields_df.drop(columns=['field_name_lower'], inplace=True)
     print(f"   - LOG: {initial_field_count - len(all_fields_df)} campos de sistema estáticos removidos.")
         
     print(f"\n   - Aplicando filtro para excluir DMOs com prefixos: {DMO_PREFIXES_TO_EXCLUDE}")
-    all_fields_df = all_fields_df[~all_fields_df['dmo_name'].str.startswith(DMO_PREFIXES_TO_EXCLUDE)]
+    all_fields_df['dmo_name'] = all_fields_df['dmo_name'].astype(str)
+    all_fields_df = all_fields_df[~all_fields_df['dmo_name'].str.lower().str.startswith(DMO_PREFIXES_TO_EXCLUDE)]
     print(f"   - DMOs restantes para análise: {len(all_fields_df['dmo_name'].unique())}.")
         
     all_fields_df['createddate_dt'] = pd.to_datetime(all_fields_df['createddate'], errors='coerce')
@@ -219,7 +224,7 @@ def main():
     records = []
     print("   - Classificando cada campo...")
     for _, row in all_fields_df.iterrows():
-        check_tuple = (row['dmo_name'], row['field_name'])
+        check_tuple = (str(row['dmo_name']).lower(), str(row['field_name']).lower())
         is_directly_used = check_tuple in all_used_fields
         is_in_grace_period = not pd.isna(row['createddate_dt']) and (TODAY - row['createddate_dt']) <= timedelta(days=90)
         status = "Utilizado" if is_directly_used or is_in_grace_period else "Não Utilizado"

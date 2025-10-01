@@ -1,7 +1,8 @@
 queryType,query
 #Tooling,"SELECT Id AS id, CreatedById AS createdbyid, CreatedDate AS createddate, CreationType AS creationtype, DeveloperName AS developername FROM MktDataModelObject --DataModelObjectsDetails"
 
-#Tooling,"SELECT Id AS id, DeveloperName AS developername, MktDataModelObjectId AS mktdatamodelobjectid, KeyQualifierName AS keyqualifiername FROM MktDataModelField"
+### MktDataModelField ###
+Tooling,"SELECT Id AS id, DeveloperName AS developername, MktDataModelObjectId AS mktdatamodelobjectid, KeyQualifierName AS keyqualifiername FROM MktDataModelField"
 
 #Standard,"SELECT Id AS id, CreatedById AS createdbyid, CreatedDate AS createddate, Name AS name FROM DataStream --DataStreamDetails"
 
@@ -23,7 +24,7 @@ queryType,query
 
 ### SSOT ###
 ### DataSpaces ###
-ssot,"SELECT id AS id, name AS name, label AS label, status AS status, description AS description FROM data-spaces?entryPoint=dataSpaces --DataSpaces"
+#ssot,"SELECT id AS id, name AS name, label AS label, status AS status, description AS description FROM data-spaces?entryPoint=dataSpaces --DataSpaces"
 
 ### DataModelObjects ###
 #ssot,"SELECT id AS id, name AS name, label AS label, dataSpaceName AS dataspacename, category AS category, creationType AS creationtype, isEditable AS iseditable, isEnabled AS isenabled, isSegmentable AS issegmentable, fields.creationType AS fields.creationtype, fields.isDistinct AS fields.isdistinct, fields.isMapped AS fields.ismapped, fields.label AS fields.label, fields.name AS fields.name, fields.type AS fields.type, fields.usageTag AS fields.usagetag FROM data-model-objects?offset=0&entryPoint=dataModelObject --DataModelObjects"
@@ -38,7 +39,7 @@ ssot,"SELECT id AS id, name AS name, label AS label, status AS status, descripti
 #ssot,"SELECT apiName AS apiname, calculatedInsightStatus AS calculatedinsightstatus, creationType AS creationtype, dataSpace AS dataspace, definitionStatus AS definitionstatus, definitionType AS definitiontype, description AS description, displayName AS displayname, isEnabled AS isenabled, lastCalcInsightStatusDateTime AS lastcalcinsightstatusdatetime, lastCalcInsightStatusErrorCode AS lastcalcinsightstatuserrorcode, lastRunDateTime AS lastrundatetime, lastRunStatus AS lastrunstatus, lastRunStatusDateTime AS lastrunstatusdatetime, lastRunStatusErrorCode AS lastrunstatuserrorcode, publishScheduleEndDate AS publishscheduleenddate, publishScheduleInterval AS publishscheduleinterval, publishScheduleStartDateTime AS publishschedulestartdatetime, dimensions.apiName AS dimensions.apiname, dimensions.creationType AS dimensions.creationtype, dimensions.dataType AS dimensions.datatype, dimensions.displayName AS dimensions.displayname, dimensions.fieldRole AS dimensions.fieldrole, dimensions.dataSource.sourceApiName AS dimensions.datasource.sourceapiname, dimensions.dataSource.type AS dimensions.datasource.type, measures.apiName AS measures.apiname, measures.creationType AS measures.creationtype, measures.dataType AS measures.datatype, measures.displayName AS measures.displayname, measures.fieldAggregationType AS measures.fieldaggregationtype, measures.fieldRole AS measures.fieldrole, measures.formula AS measures.formula, measures.dataSource.sourceApiName AS measures.datasource.sourceapiname, measures.dataSource.type AS measures.datasource.type, expression AS expression FROM calculated-insights?limit=200&entryPoint=collection.items&sourceIteration=DataSpaces&parameterName=dataspace&sourceParameter=name --CalculatedInsights"
 
 ### Mappings ###
-ssot,"SELECT developerName AS developername, sourceEntityDeveloperName AS sourceentitydevelopername, status AS status, targetEntityDeveloperName AS targetentitydevelopername, fieldMappings.developerName AS fieldmappings.developername, fieldMappings.sourceFieldDeveloperName AS fieldmappings.sourcefielddevelopername, fieldMappings.targetFieldDeveloperName AS fieldmappings.targetfielddevelopername FROM data-model-object-mappings?entryPoint=objectSourceTargetMaps&sourceIteration=DataModelObjects&parameterName=dmoDeveloperName&sourceParameter=name&parameterName=dataspace&sourceParameter=dataspacename&correlationField=developername WHERE category <> UNASSIGNED AND category <> ACTIVATION_AUDIENCE AND category <> SEGMENT_MEMBERSHIP AND creationType <> Curated AND developername--Mappings"
+#ssot,"SELECT developerName AS developername, sourceEntityDeveloperName AS sourceentitydevelopername, status AS status, targetEntityDeveloperName AS targetentitydevelopername, fieldMappings.developerName AS fieldmappings.developername, fieldMappings.sourceFieldDeveloperName AS fieldmappings.sourcefielddevelopername, fieldMappings.targetFieldDeveloperName AS fieldmappings.targetfielddevelopername FROM data-model-object-mappings?entryPoint=objectSourceTargetMaps&sourceIteration=DataModelObjects&parameterName=dmoDeveloperName&sourceParameter=name&parameterName=dataspace&sourceParameter=dataspacename&correlationField=developername WHERE category <> UNASSIGNED AND category <> ACTIVATION_AUDIENCE AND category <> SEGMENT_MEMBERSHIP AND creationType <> Curated AND developername--Mappings"
 ###
 
 ### localSQL ###
@@ -47,3 +48,5 @@ ssot,"SELECT developerName AS developername, sourceEntityDeveloperName AS source
 
 ### Job ###
 #job,"SELECT * FROM Job WHERE JobId = 1a2sazzzzzzz"
+
+##id,name,developername,dataspacename,activationdefinitionid,activationtargetsubjectconfig.developername,activationtargetsubjectconfig.id,activationtargetsubjectconfig.masterlabel,attributesconfig.attributes.datasourcetype,attributesconfig.attributes.entityname,attributesconfig.attributes.label,attributesconfig.attributes.name,attributesconfig.attributes.referenceattributename,attributesconfig.attributes.source,attributesconfig.attributes.type,cp.contactpointentityid,cp.contactpointentityname,cp.fields.id,cp.fields.label,cp.fields.name,cp.fields.referenceattributename,cp.id,cp.source.id,cp.source.datasourceid,cp.source.datasourcepreference,cp.source.datasourcepriority,cp.source.name,cp.type,enabled,historyaudiencedmoapiname,historyaudiencedmolabel,isenabled,latestaudiencedmoapiname,latestaudiencedmolabel,latestaudiencedmolastruntimestamp,marketsegmentid,membershipname,refreshtype,segmentapiname,segmentid
