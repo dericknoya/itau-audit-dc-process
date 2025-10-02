@@ -83,14 +83,13 @@ def analyze_segments(segments_df, activations_df, user_map):
     
     results = []
     
-    # --- CORREÇÃO FINAL E ROBUSTA ---
-    # Limpa (strip) e padroniza (lower) os IDs de AMBOS os lados para garantir uma correspondência 100% precisa,
-    # eliminando problemas de whitespace ou case.
     if 'marketsegmentid' in activations_df.columns and not activations_df.empty:
-        segments_with_activations = set(activations_df['marketsegmentid'].dropna().astype(str).str.strip().str.lower())
+        # Para a verificação de ativações, usamos o ID completo de 18 caracteres
+        segments_with_activations_full_id = set(activations_df['marketsegmentid'].dropna().astype(str).str.strip().str.lower())
     else:
-        segments_with_activations = set()
+        segments_with_activations_full_id = set()
     
+    # Concatena todos os critérios. A busca aqui será feita com o ID de 15 caracteres.
     all_criteria_text = ' '.join(segments_df['includecriteria'].fillna('') + segments_df['excludecriteria'].fillna('')).lower()
     
     segments_df['lastpublishstatusdatetime_dt'] = pd.to_datetime(segments_df['lastpublishstatusdatetime'], errors='coerce')
@@ -100,11 +99,18 @@ def analyze_segments(segments_df, activations_df, user_map):
         is_older_than_30_days = pd.isna(row['lastpublishstatusdatetime_dt']) or (TODAY - row['lastpublishstatusdatetime_dt']) > timedelta(days=30)
         if not is_older_than_30_days: continue
 
-        # Limpa o ID do segmento da mesma forma antes de comparar
-        segment_id = str(row['id']).strip().lower()
+        # --- LÓGICA CORRIGIDA FINAL ---
+        # Pega o ID completo (18 caracteres) para checar ativações
+        full_segment_id = str(row['id']).strip().lower()
+        # Pega o ID truncado (15 caracteres) para checar se é usado como filtro
+        truncated_segment_id = full_segment_id[:15]
+
+        # A contagem agora é feita com o ID de 15 caracteres.
+        # Se a contagem for > 1, ele é usado como filtro em outro segmento.
+        used_as_filter = all_criteria_text.count(truncated_segment_id) > 1
         
-        used_as_filter = segment_id in all_criteria_text
-        has_activation = segment_id in segments_with_activations
+        # A verificação de ativação continua com o ID completo.
+        has_activation = full_segment_id in segments_with_activations_full_id
         
         # Lógica para determinar o status do segmento
         if not used_as_filter:
@@ -113,10 +119,12 @@ def analyze_segments(segments_df, activations_df, user_map):
             else:
                 status, reason = "ORFAO", "Última publicação > 30 dias, não usado como filtro e não possui ativação relacionada."
         elif used_as_filter and is_older_than_30_days:
-             status, reason = "INATIVO", "Última publicação > 30 dias, mas é usado como filtro em outro segmento."
+             # Este status é para segmentos que SÃO usados como filtro, mas estão inativos.
+             # Pela regra, eles não devem ser listados para exclusão, então não adicionamos à lista.
+             # Se você quisesse listá-los como 'INATIVO', a linha de 'append' viria aqui.
+             pass # Intencionalmente não faz nada, pois não deve ser excluído.
         
         if status:
-            # Mantemos o ID original no relatório final
             results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "SEGMENT","LAST_REFRESH_DATE": row['lastpublishstatusdatetime_dt'], "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": user_map.get(row['createdbyid'], row['createdbyid'])})
             
     print(f"{get_timestamp()} Análise de Segmentos concluída.")
