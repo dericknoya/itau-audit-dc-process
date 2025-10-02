@@ -1,6 +1,5 @@
 private.pem
 .env
 dataExtract/
-*.csv
 tempCodeRunnerFile.py
 
