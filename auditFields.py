@@ -230,6 +230,7 @@ def main():
         status = "Utilizado" if is_directly_used or is_in_grace_period else "Não Utilizado"
 
         records.append({
+            'DELETAR': 'NAO',
             'API_Name': row['dmo_name'], 'Label': row['label'],
             'Field_API_Name': row['field_name'], 'Field_Label': row['field_label'],
             'CreatedDate': row['createddate_dt'].strftime('%Y-%m-%d') if not pd.isna(row['createddate_dt']) else 'N/A',

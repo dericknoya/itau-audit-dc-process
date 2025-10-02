@@ -93,11 +93,11 @@ def analyze_segments(segments_df, activations_df, user_map):
     
     all_criteria_text = ' '.join(segments_df['includecriteria'].fillna('') + segments_df['excludecriteria'].fillna('')).lower()
     
-    segments_df['lastpublishedenddatetime_dt'] = pd.to_datetime(segments_df['lastpublishedenddatetime'], errors='coerce')
+    segments_df['lastpublishstatusdatetime_dt'] = pd.to_datetime(segments_df['lastpublishstatusdatetime'], errors='coerce')
     
     for _, row in tqdm(segments_df.iterrows(), total=segments_df.shape[0], desc=f"{get_timestamp()} Analisando Segmentos"):
         status, reason = None, None
-        is_older_than_30_days = pd.isna(row['lastpublishedenddatetime_dt']) or (TODAY - row['lastpublishedenddatetime_dt']) > timedelta(days=30)
+        is_older_than_30_days = pd.isna(row['lastpublishstatusdatetime_dt']) or (TODAY - row['lastpublishstatusdatetime_dt']) > timedelta(days=30)
         if not is_older_than_30_days: continue
 
         # Limpa o ID do segmento da mesma forma antes de comparar
@@ -117,7 +117,7 @@ def analyze_segments(segments_df, activations_df, user_map):
         
         if status:
             # Mantemos o ID original no relatório final
-            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "SEGMENT", "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": user_map.get(row['createdbyid'], row['createdbyid'])})
+            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "SEGMENT","LAST_REFRESH_DATE": row['lastpublishstatusdatetime_dt'], "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": user_map.get(row['createdbyid'], row['createdbyid'])})
             
     print(f"{get_timestamp()} Análise de Segmentos concluída.")
     return results
@@ -132,7 +132,7 @@ def analyze_activations(activations_df, segments_to_delete_ids):
     results = []
     for _, row in tqdm(grouped.iterrows(), total=grouped.shape[0], desc=f"{get_timestamp()} Analisando Ativações Órfãs"):
         reason_text = f"ativação associada a segmento marcado para exclusão: {tuple(row['marketsegmentid'])}"
-        results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "ACTIVATION", "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": "ORFAO", "Reason": reason_text, "CREATED_BY_NAME": "N/A"})
+        results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "LAST_REFRESH_DATE": "", "OBJECT_TYPE": "ACTIVATION", "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": "ORFAO", "Reason": reason_text, "CREATED_BY_NAME": "N/A"})
     print(f"{get_timestamp()} Análise de Ativações Órfãs concluída.")
     return results
 
@@ -168,11 +168,11 @@ def analyze_dmos(dmos_df, dmo_details_df, activations_df, ci_expression_df, user
         if dmo_name in dmos_used_in_activations: continue
         if dmo_name in all_segment_criteria_text: continue
         
-        reason = "É customizado (__dlm), não usado em Segmentos, Ativações ou CIs"
+        reason = "Não usado em Segmentos, Ativações ou CIs"
         reason += " e criado há mais de 90 dias." if 'createddate_dt' in dmos_df.columns and not pd.isna(row['createddate_dt']) else "."
         
         created_by_name = user_map.get(row.get('createdbyid'), "N/A")
-        results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['name'], "OBJECT_TYPE": "DMO", "DELETION_IDENTIFIER": row['name'], "DISPLAY_NAME": row['label'], "STATUS": "ORFAO", "Reason": reason, "CREATED_BY_NAME": created_by_name})
+        results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['name'], "LAST_REFRESH_DATE": "", "OBJECT_TYPE": "DMO", "DELETION_IDENTIFIER": row['name'], "DISPLAY_NAME": row['label'], "STATUS": "ORFAO", "Reason": reason, "CREATED_BY_NAME": created_by_name})
     print(f"{get_timestamp()} Análise de DMOs concluída.")
     return results
 
@@ -211,7 +211,7 @@ def analyze_data_streams(streams_df, stream_details_df, mappings_df, user_map):
         if status:
             created_by_name = user_map.get(row.get('createdbyid'), "N/A")
             display_name = row['name_details'] if 'name_details' in row and pd.notna(row['name_details']) else row.get('name', 'N/A')
-            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['datalakeobjectinfo.name'], "OBJECT_TYPE": "DATA_STREAM", "DELETION_IDENTIFIER": row['datalakeobjectinfo.name'], "DISPLAY_NAME": display_name, "STATUS": status, "Reason": reason, "CREATED_BY_NAME": created_by_name})
+            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['datalakeobjectinfo.name'], "LAST_REFRESH_DATE": row['lastrefreshdate_dt'], "OBJECT_TYPE": "DATA_STREAM", "DELETION_IDENTIFIER": row['datalakeobjectinfo.name'], "DISPLAY_NAME": display_name, "STATUS": status, "Reason": reason, "CREATED_BY_NAME": created_by_name})
     print(f"{get_timestamp()} Análise de Data Streams concluída.")
     return results
 
@@ -225,7 +225,7 @@ def analyze_calculated_insights(ci_df, user_map):
         is_older_than_90_days = pd.isna(row['lastrundatetime_dt']) or (TODAY - row['lastrundatetime_dt']) > timedelta(days=90)
         if is_successful and is_older_than_90_days:
             created_by_name = user_map.get(row.get('createdbyid'), "N/A")
-            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['apiname'], "OBJECT_TYPE": "CALCULATED_INSIGHTS", "DELETION_IDENTIFIER": row['apiname'], "DISPLAY_NAME": row['displayname'], "STATUS": "INATIVO", "Reason": "Último processamento bem-sucedido > 90 dias.", "CREATED_BY_NAME": created_by_name})
+            results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['apiname'], "LAST_REFRESH_DATE": row['lastrundatetime_dt'], "OBJECT_TYPE": "CALCULATED_INSIGHTS", "DELETION_IDENTIFIER": row['apiname'], "DISPLAY_NAME": row['displayname'], "STATUS": "INATIVO", "Reason": "Último processamento bem-sucedido > 90 dias.", "CREATED_BY_NAME": created_by_name})
     print(f"{get_timestamp()} Análise de Calculated Insights concluída.")
     return results
 
@@ -279,7 +279,7 @@ def main():
     final_df.drop_duplicates(subset=['ID_OR_API_NAME', 'OBJECT_TYPE'], inplace=True, keep='first')
     
     output_filename = 'audit_objetos_para_exclusao.csv'
-    final_df = final_df[["DELETAR", "ID_OR_API_NAME", "OBJECT_TYPE", "DELETION_IDENTIFIER", "DISPLAY_NAME", "STATUS", "Reason", "CREATED_BY_NAME"]]
+    final_df = final_df[["DELETAR", "ID_OR_API_NAME","LAST_REFRESH_DATE", "OBJECT_TYPE", "DELETION_IDENTIFIER", "DISPLAY_NAME", "STATUS", "Reason", "CREATED_BY_NAME"]]
     final_df.to_csv(output_filename, index=False)
     
     print("\n" + "="*50)
