@@ -9,7 +9,7 @@ import time
 from dotenv import load_dotenv
 import re
 
-# --- 1. Configuração e Autenticação ---
+# --- 1. Configuração e Autenticação ----
 
 load_dotenv()
 SF_LOGIN_URL = os.getenv("SF_LOGIN_URL", "https://login.salesforce.com")
