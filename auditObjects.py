@@ -9,7 +9,7 @@ import time
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-# --- 1. Configuração e Autenticação ---
+# --- 1. Configuração e Autenticação ----
 load_dotenv()
 SF_LOGIN_URL = os.getenv("SF_LOGIN_URL", "https://login.salesforce.com")
 SF_CLIENT_ID = os.getenv("SF_CLIENT_ID")
