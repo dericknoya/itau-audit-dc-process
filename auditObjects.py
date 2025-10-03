@@ -79,39 +79,40 @@ def load_data_from_csv(files_to_load):
 # --- 3. Lógica de Análise ---
 
 def analyze_segments(segments_df, activations_df, user_map):
-    if segments_df.empty: return []
-    
+    if segments_df.empty: return [], {} # Retorna também um dicionário vazio
+
     results = []
-    
+    segment_info_map = {} # Mapa para passar informações para a análise de ativações
+
     if 'marketsegmentid' in activations_df.columns and not activations_df.empty:
-        # Para a verificação de ativações, usamos o ID completo de 18 caracteres
-        segments_with_activations_full_id = set(activations_df['marketsegmentid'].dropna().astype(str).str.strip().str.lower())
+        # Cria um conjunto (set) de IDs de ativação, todos TRUNCADOS para 15 caracteres.
+        # Isso garante que a comparação com o ID do segmento também truncado funcione.
+        segments_with_activations_truncated_id = set(
+            activations_df['marketsegmentid'].dropna().astype(str).str.strip().str.lower().str[:15]
+        )
     else:
-        segments_with_activations_full_id = set()
-    
+        segments_with_activations_truncated_id = set()
+
     # Concatena todos os critérios. A busca aqui será feita com o ID de 15 caracteres.
     all_criteria_text = ' '.join(segments_df['includecriteria'].fillna('') + segments_df['excludecriteria'].fillna('')).lower()
-    
     segments_df['lastpublishstatusdatetime_dt'] = pd.to_datetime(segments_df['lastpublishstatusdatetime'], errors='coerce')
-    
+
     for _, row in tqdm(segments_df.iterrows(), total=segments_df.shape[0], desc=f"{get_timestamp()} Analisando Segmentos"):
         status, reason = None, None
         is_older_than_30_days = pd.isna(row['lastpublishstatusdatetime_dt']) or (TODAY - row['lastpublishstatusdatetime_dt']) > timedelta(days=30)
         if not is_older_than_30_days: continue
 
-        # --- LÓGICA CORRIGIDA FINAL ---
-        # Pega o ID completo (18 caracteres) para checar ativações
+        # Pega o ID completo (18 caracteres) para referência e formatação final
         full_segment_id = str(row['id']).strip().lower()
-        # Pega o ID truncado (15 caracteres) para checar se é usado como filtro
+        # Pega o ID truncado (15 caracteres) para todas as verificações de uso (filtros e ativações)
         truncated_segment_id = full_segment_id[:15]
 
-        # A contagem agora é feita com o ID de 15 caracteres.
-        # Se a contagem for > 1, ele é usado como filtro em outro segmento.
+        # A contagem para checar se é usado como filtro. Se a contagem for > 1, ele é usado em outro segmento.
         used_as_filter = all_criteria_text.count(truncated_segment_id) > 1
         
-        # A verificação de ativação continua com o ID completo.
-        has_activation = full_segment_id in segments_with_activations_full_id
-        
+        # A verificação de ativação agora também usa o ID truncado de 15 caracteres.
+        has_activation = truncated_segment_id in segments_with_activations_truncated_id
+
         # Lógica para determinar o status do segmento
         if not used_as_filter:
             if has_activation:
@@ -119,29 +120,61 @@ def analyze_segments(segments_df, activations_df, user_map):
             else:
                 status, reason = "ORFAO", "Última publicação > 30 dias, não usado como filtro e não possui ativação relacionada."
         elif used_as_filter and is_older_than_30_days:
-             # Este status é para segmentos que SÃO usados como filtro, mas estão inativos.
-             # Pela regra, eles não devem ser listados para exclusão, então não adicionamos à lista.
-             # Se você quisesse listá-los como 'INATIVO', a linha de 'append' viria aqui.
-             pass # Intencionalmente não faz nada, pois não deve ser excluído.
-        
+            # Este segmento é usado como filtro, portanto, não deve ser listado para exclusão.
+            pass # Intencionalmente não faz nada.
+
         if status:
             results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "OBJECT_TYPE": "SEGMENT","LAST_REFRESH_DATE": row['lastpublishstatusdatetime_dt'], "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": status, "Reason": reason, "CREATED_BY_NAME": user_map.get(row['createdbyid'], row['createdbyid'])})
-            
-    print(f"{get_timestamp()} Análise de Segmentos concluída.")
-    return results
+            # Popula o mapa com o ID truncado, ID completo e status para a próxima etapa
+            segment_info_map[truncated_segment_id] = {"full_id": row['id'], "status": status}
 
-def analyze_activations(activations_df, segments_to_delete_ids):
-    if activations_df.empty or not segments_to_delete_ids: return []
+    print(f"{get_timestamp()} Análise de Segmentos concluída.")
+    return results, segment_info_map
+
+def analyze_activations(activations_df, segment_info_map):
+    if activations_df.empty or not segment_info_map: return []
+
+    relevant_segment_ids_trunc = set(segment_info_map.keys())
     
-    relevant_activations = activations_df[activations_df['marketsegmentid'].isin(segments_to_delete_ids)].copy()
+    # Cria uma coluna com o ID truncado para fazer a correspondência
+    activations_df['marketsegmentid_trunc'] = activations_df['marketsegmentid'].dropna().astype(str).str.strip().str.lower().str[:15]
+    
+    relevant_activations = activations_df[activations_df['marketsegmentid_trunc'].isin(relevant_segment_ids_trunc)].copy()
     if relevant_activations.empty: return []
+
+    # Agrupa por ativação para lidar com casos onde uma ativação aponta para múltiplos segmentos
+    grouped = relevant_activations.groupby(['id', 'name'])['marketsegmentid_trunc'].apply(list).reset_index()
     
-    grouped = relevant_activations.groupby(['id', 'name'])['marketsegmentid'].apply(list).reset_index()
     results = []
-    for _, row in tqdm(grouped.iterrows(), total=grouped.shape[0], desc=f"{get_timestamp()} Analisando Ativações Órfãs"):
-        reason_text = f"ativação associada a segmento marcado para exclusão: {tuple(row['marketsegmentid'])}"
-        results.append({"DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "LAST_REFRESH_DATE": "", "OBJECT_TYPE": "ACTIVATION", "DELETION_IDENTIFIER": row['id'], "DISPLAY_NAME": row['name'], "STATUS": "ORFAO", "Reason": reason_text, "CREATED_BY_NAME": "N/A"})
-    print(f"{get_timestamp()} Análise de Ativações Órfãs concluída.")
+    for _, row in tqdm(grouped.iterrows(), total=grouped.shape[0], desc=f"{get_timestamp()} Analisando Ativações Relacionadas"):
+        final_status = "INATIVO"
+        segment_ids_list = []
+        
+        linked_segment_ids = set(row['marketsegmentid_trunc'])
+        
+        for trunc_id in linked_segment_ids:
+            if trunc_id in segment_info_map:
+                info = segment_info_map[trunc_id]
+                segment_status = info['status']
+                segment_full_id = info['full_id']
+                
+                if segment_status == "ORFAO":
+                    final_status = "ORFAO"
+                
+                segment_ids_list.append(segment_full_id)
+
+        # --- ALTERAÇÃO FINAL AQUI ---
+        # A string de motivo agora é apenas a junção dos IDs
+        reason_text = ', '.join(segment_ids_list)
+        
+        results.append({
+            "DELETAR": "NAO", "ID_OR_API_NAME": row['id'], "LAST_REFRESH_DATE": "", 
+            "OBJECT_TYPE": "ACTIVATION", "DELETION_IDENTIFIER": row['id'], 
+            "DISPLAY_NAME": row['name'], "STATUS": final_status, "Reason": reason_text, 
+            "CREATED_BY_NAME": "N/A"
+        })
+        
+    print(f"{get_timestamp()} Análise de Ativações Relacionadas concluída.")
     return results
 
 def analyze_dmos(dmos_df, dmo_details_df, activations_df, ci_expression_df, user_map, all_segment_criteria_text):
@@ -264,10 +297,9 @@ def main():
     activations_df = dfs.get("activations", pd.DataFrame())
     segments_df = dfs.get("segments", pd.DataFrame())
     
-    segment_results = analyze_segments(segments_df, activations_df, user_map)
-    segments_to_delete_ids = {str(res['ID_OR_API_NAME']) for res in segment_results}
+    segment_results, segment_info_map = analyze_segments(segments_df, activations_df, user_map)
     
-    activation_results = analyze_activations(activations_df, segments_to_delete_ids)
+    activation_results = analyze_activations(activations_df, segment_info_map)
     
     if not segments_df.empty:
         all_segment_criteria_text = ' '.join(segments_df['includecriteria'].fillna('') + segments_df['excludecriteria'].fillna(''))
